@@ -23,12 +23,12 @@ class ParameterManager:
         )
         return json_string
 
-    def _string_to_json(self, param_string, mode="user"):
+    def _string_to_json(self, param_string, mode_from="user"):
         """Converts a semicolon-separated string to a JSON dictionary.
 
         Args:
             param_string (str): String representing the params.
-            mode (str): Format of the string; "user" for
+            mode_from (str): Format of the string; "user" for
               semicolon-separated key-value pairs, "json" for JSON string.
 
         Returns:
@@ -38,7 +38,7 @@ class ParameterManager:
         if not param_string:
             return {}
 
-        if mode == "user":
+        if mode_from == "user":
             # Split the string into key-value pairs
             param_string = param_string.replace(" ", "")
             params = dict(
@@ -96,10 +96,12 @@ class ParameterManager:
             # Convert user-provided string to JSON format
             param_dict = self._string_to_json(param_string)
         elif mode == "json":
-            param_dict = self._string_to_json(param_string, mode="json")
+            param_dict = self._string_to_json(param_string, mode_from="json")
 
         # Update internal parameters using the JSON dictionary
         self._json_to_params(param_dict)
+
+        return param_dict
 
     def save(self, filepath, mode="user"):
         """Saves parameters to a file.
@@ -170,6 +172,10 @@ class ParameterManager:
 class Parameters(ParameterManager):
     def __init__(
         self,
+        project_name="continual-learning",
+        entity_name="francesco-mannella",
+        init_name="anchor_sigma",
+        env_name="EyeSim/EyeSim-v0",
         learning_rate=0.001,
         batch_size=64,
         epochs=100,
@@ -185,6 +191,11 @@ class Parameters(ParameterManager):
         efficacy_decay=0.005,
         efficacy_saturation_factor=2.5,
     ):
+
+        self.project_name = project_name
+        self.entity_name = entity_name
+        self.init_name = init_name
+        self.env_name = env_name
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.epochs = epochs
