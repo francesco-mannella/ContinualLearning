@@ -8,7 +8,6 @@ import pandas as pd
 import torch
 import torch.optim as optim
 import tqdm
-from kmeans_pytorch import kmeans as KMeans
 from matplotlib.colors import ListedColormap
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
@@ -197,8 +196,8 @@ def get_regress_matrix_new(model, loaders, regres_w):
 
     # Group by target and calculate mean responses
     curr_regres_w = resps.groupby("target").mean().reset_index().to_numpy()
-    curr_regres_w[:, 1:] /= regres_w[:, 1:].sum(1).reshape(-1, 1)
-    regres_w[curr_regres_w[:, 0].flatten().int()] = curr_regres_w[:, 1:]
+    curr_regres_w[:, 1:] /= curr_regres_w[:, 1:].sum(1).reshape(-1, 1)
+    regres_w[curr_regres_w[:, 0].flatten().astype(int)] = curr_regres_w[:, 1:]
 
     return regres_w
 
@@ -217,7 +216,7 @@ def evaluate_model(model, test_loaders, w_regress, DEVICE):
     """
     correct = 0
     total = 0
-    regress = w_regress[:, 1:]
+    regress = w_regress
     with torch.no_grad():
         for test_loader in test_loaders:
             for data, target in test_loader:
@@ -231,58 +230,6 @@ def evaluate_model(model, test_loaders, w_regress, DEVICE):
     accuracy = correct / total
 
     return accuracy
-
-
-def get_groups(model, lossManager, n_groups):
-    """Clusters weights into groups using K-means.
-
-    Args:
-        model: The model to get weights from.
-        lossManager: an object ith info about loss and efficacy
-        n_groups: The number of groups to cluster into.
-
-    Returns:
-        Group labels and centroids.
-    """
-    weights = model.get_weights("torch").T
-    weights = torch.nn.functional.normalize(weights, 0)
-
-    efficacy = lossManager.get_efficacies()
-    efficacy = torch.tensor(efficacy).to(weights.device)
-    efficacy_idcs = torch.where(efficacy > 0.3)[0]
-
-    group_labels = (n_groups + 1) * torch.ones(weights.shape[0]).long()
-    group_labels[efficacy_idcs], group_centroids = KMeans(
-        weights[efficacy_idcs],
-        num_clusters=n_groups,
-        tol=1e-30,
-        device=DEVICE,
-    )
-
-    return group_labels, group_centroids
-
-
-def get_ordered_labels(labels, anchors):
-    side = int(np.sqrt(len(labels)))
-    t = torch.arange(side, device=labels.device)
-    x, y = torch.meshgrid(t, t, indexing="ij")
-    indices = torch.stack([x.flatten(), y.flatten()], dim=1).to(labels.device)
-    ianchors = anchors.round().int().to(labels.device)
-    labels_names = labels.unique()
-
-    dists = torch.cdist(indices.float(), ianchors.float())
-    anchor_in_labels_idcs = dists.argmin(0)
-    labels_order = labels[anchor_in_labels_idcs]
-    not_anch_labels = torch.where(
-        torch.tensor([x not in labels_order for x in labels_names]).to(
-            labels.device
-        )
-    )[0]
-    labels_order = torch.hstack(
-        [labels_order, labels_names[not_anch_labels].flatten()]
-    )
-
-    return labels_order[labels]
 
 
 class Plotter:
@@ -305,26 +252,17 @@ class Plotter:
         self.cmap = cmap
         plt.ion()
         plt.close("all")
-        self.fig, self.ax = plt.subplots(1, 4, figsize=(9, 2))
+        self.fig, self.ax = plt.subplots(1, 2, figsize=(6, 3))
         self.ax[0].set_axis_off()
         self.im = self.ax[0].imshow(np.zeros([imside, imside]), vmin=0, vmax=1)
+        self.ax[0].set_title("Weights")
         self.ax[1].set_axis_off()
         self.efim = self.ax[1].imshow(np.zeros([side, side]), vmin=0, vmax=1)
-        self.ax[2].set_axis_off()
-        self.clim = self.ax[2].imshow(np.zeros([side, side, 3]))
-        self.ax[3].set_axis_off()
-        # Reshape and tile the colormap for display as a colorbar
-        self.bar = self.ax[3].imshow(
-            cmap.reshape(-1, 1, 4) * (np.ones([2, 4]).reshape(1, 2, 4))
-        )
+        self.ax[0].set_title("Efficacy")
         plt.pause(0.1)
 
-    def plot_weights_and_efficacies(self, group_labels):
-        """Plots weights, efficacies, and group labels.
-
-        Args:
-            group_labels: Cluster labels for each neuron.
-        """
+    def plot_weights_and_efficacies(self):
+        """Plots weights and efficacies."""
         # Reshape the weights into a visualizable format
         w = (
             self.model.get_weights()
@@ -334,12 +272,12 @@ class Plotter:
         )
         ef = self.loss_manager.get_efficacies().reshape(self.side, self.side)
         # Reshape group labels into the efficacy map shape
-        cl = group_labels.reshape(20, 20).detach().cpu().numpy()
-        cl = self.cmap[cl]
         self.im.set_array(w)
         self.efim.set_array(ef)
-        self.clim.set_array(cl)
         plt.pause(0.1)
+
+
+# %%
 
 
 def main(params, use_wandb=False):
@@ -406,6 +344,7 @@ def main(params, use_wandb=False):
     mnist_test = datasets.MNIST(
         root="./data", train=False, download=True, transform=transform
     )
+    data_labels = mnist_test.targets.unique()
 
     print("Initialize Task Dataset loaders")
     train_loaders, test_loaders = [], []
@@ -421,6 +360,9 @@ def main(params, use_wandb=False):
     model, optimizer = initialize_models(
         params.input_dim, params.latent_dim, params.learning_rate
     )
+
+    # Regress matrix
+    w_regress = np.zeros([len(data_labels), model.output_size])
 
     print("Initialize the LOSS manager")
     # Initialize the loss manager.
@@ -457,7 +399,11 @@ def main(params, use_wandb=False):
         )
 
         # Evaluate the model and plot the results.
-        w_regress = get_regress_matrix(model, train_loaders[: i + 1])
+        w_regress = get_regress_matrix_new(
+            model,
+            train_loaders[i : i + 1],
+            w_regress,
+        )
         accuracy = evaluate_model(
             model,
             test_loaders[: i + 1],
@@ -465,19 +411,18 @@ def main(params, use_wandb=False):
             DEVICE,
         )
 
-        # Determine number of groups for current task
-        group_labels, _ = get_groups(model, lossManager, (i + 1) * 2)
-        ordered_group_labels = get_ordered_labels(group_labels, anchors)
-        plotter.plot_weights_and_efficacies(ordered_group_labels)
+        plotter.plot_weights_and_efficacies()
 
         print(f"Accuracy on task {i+1}: {100 * accuracy:.2f}%")
-        wandb.log(
-            {
-                "task": {i + 1},
-                "accuracy": accuracy,
-                "plot": plotter.fig,
-            }
-        )
+
+        if use_wandb:
+            wandb.log(
+                {
+                    "task": {i + 1},
+                    "accuracy": accuracy,
+                    "plot": plotter.fig,
+                }
+            )
 
 
 # Define a function to parse command-line arguments.
