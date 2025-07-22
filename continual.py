@@ -5,7 +5,6 @@ from itertools import combinations
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -151,7 +150,6 @@ def to_numpy(x):
     return x.cpu().detach().numpy()
 
 
-
 class MultinomialLogisticRegression(nn.Module):
     def __init__(self, num_features, num_classes):
         super(MultinomialLogisticRegression, self).__init__()
@@ -257,7 +255,6 @@ def evaluate_model_by_regression(model, test_loaders, regress_model, device):
     accurate = torch.tensor(accuracies).mean().item()
     print(f"accuracy is {100*accurate:<5.2f}%")
     return accurate
-
 
 
 class Plotter:
@@ -447,7 +444,6 @@ def main(params, use_wandb=False, device="gpu"):
         )
 
         # # REGRESS MODEL METHOD
-
         regress_model = get_regression(
             model,
             train_loaders[i : i + 1],
@@ -458,7 +454,7 @@ def main(params, use_wandb=False, device="gpu"):
 
         regress_accuracy = evaluate_model_by_regression(
             model,
-            test_loaders[i: i + 1],
+            test_loaders[i : i + 1],
             regress_model,
             device,
         )
@@ -474,6 +470,16 @@ def main(params, use_wandb=False, device="gpu"):
                     "plot": plotter.fig,
                 }
             )
+
+    final_accuracies = [] 
+    for i, task in enumerate(tasks):
+        regress_accuracy = evaluate_model_by_regression(
+            model,
+            test_loaders[i : i + 1],
+            regress_model[i],
+            device,
+        final_accuracies.append(regress_accuracy)
+        wandb.summary[f"accuracy_task{i:03d}"] = regress_accuracy
 
 
 # Define a function to parse command-line arguments.
@@ -531,117 +537,6 @@ def encode_parameter_string(opt):
 
 # %%
 if __name__ == "__main__":
-
-    # # %%
-    #
-    # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #
-    # seed = 0
-    # use_wandb = False
-    # name = "test"
-    # opt = [["epochs=10"], ["anchor_sigma=1.2"], ["latent_dim=900"]]
-    #
-    # updated_params = encode_parameter_string(opt)
-    # params = Parameters()
-    # params.init_name = name
-    # updated_json = params.update(updated_params)
-    # generator = torch.manual_seed(seed)
-    #
-    # # %% TEST
-    #
-    # # Define the format for NumPy array printing.
-    # NP_FORMAT = {"float": "{:8.4f}".format}
-    # np.set_printoptions(formatter=NP_FORMAT, linewidth=999)
-    #
-    # train_loaders, test_loaders, data_labels, anchors, cmap, tasks = (
-    #     setup_data(params, DEVICE)
-    # )
-    #
-    # # Initialize the model and optimizer.
-    # model, optimizer = initialize_models(
-    #     params.input_dim, params.latent_dim, params.learning_rate
-    # )
-    #
-    # print("Initialize the LOSS manager")
-    # # Initialize the loss manager.
-    # lossManager = LossEfficacyFactory(
-    #     model=model,
-    #     mode="stm",
-    #     efficacy_radial_sigma=params.efficacy_radial_sigma,
-    #     efficacy_decay=params.efficacy_decay,
-    #     efficacy_saturation_factor=params.efficacy_saturation_factor,
-    # ).to(DEVICE)
-    #
-    # i = 4
-    # task = tasks[i]
-    #
-    # print(f"Training on task {i+1}: {task}")
-    # train_stm(
-    #     model,
-    #     optimizer,
-    #     train_loaders[i],
-    #     lossManager,
-    #     anchors,
-    #     params.epochs,
-    #     params.neigh_sigma_base,
-    #     params.neigh_sigma_max,
-    #     params.lr_base,
-    #     params.lr_max,
-    #     params.anchor_sigma,
-    #     DEVICE,
-    # )
-    # # %%
-    # targets = []
-    # norms = []
-    # for data, target in train_loaders[i]:
-    #     data, target = data.to(DEVICE), target.to(DEVICE)
-    #     norm = model(data)
-    #     targets.append(target.cpu().detach().numpy())
-    #     norms.append(norm.cpu().detach().numpy())
-    # # %%
-    # targets = np.hstack(targets)
-    # norms = np.vstack(norms)
-    #
-    # ltargets = np.unique(targets)
-    #
-    # n_zeros = norms[targets == ltargets[0]]
-    # n_ones = norms[targets == ltargets[1]]
-    # s_zeros = softmax(1e3 / n_zeros, 1)
-    # s_ones = softmax(1e3 / n_ones, 1)
-    # w = np.array([s_zeros.mean(0), s_ones.mean(0)])
-    #
-    # # %%
-    # targets = []
-    # norms = []
-    # datas = []
-    # for data, target in test_loaders[i]:
-    #     data, target = data.to(DEVICE), target.to(DEVICE)
-    #     norm = model(data)
-    #     targets.append(target.cpu().detach().numpy())
-    #     norms.append(norm.cpu().detach().numpy())
-    #     datas.append(data.cpu().detach().numpy())
-    #
-    # targets = np.hstack(targets)
-    # norms = np.vstack(norms)
-    # datas = np.vstack(datas)
-    #
-    # ltargets = np.unique(targets)
-    #
-    # n_zeros = norms[targets == ltargets[0]]
-    # n_ones = norms[targets == ltargets[1]]
-    # s_zeros = softmax(1e3 / n_zeros, 1)
-    # s_ones = softmax(1e3 / n_ones, 1)
-    #
-    # softmax(1e5 * (s_ones @ w.T), axis=1).sum(axis=0)
-    # tot = datas.shape[0]
-    # accurate = softmax(1e5 * (s_zeros @ w.T), axis=1).sum(axis=0)[0]
-    # accurate += softmax(1e5 * (s_ones @ w.T), axis=1).sum(axis=0)[1]
-    #
-    # print(f"accuracy on task {i} is {100*accurate/tot:<5.2f}%")
-    #
-    # # %%
-    #
-    # # %%
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args = parse_arguments()
