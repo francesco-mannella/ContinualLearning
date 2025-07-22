@@ -170,7 +170,7 @@ if __name__ == "__main__":
     params = get_params_from_file(params_json)
 
     processes = []  # type: list[subprocess.Popen]
-    MAX_PROCESSES = 1
+    MAX_PROCESSES = 4
 
     orig_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -190,7 +190,7 @@ if __name__ == "__main__":
         cmd_str = (
             f"nohup python -u {orig_path}/continual.py "
             f"-n {base_name} -s {seed} {use_wandb} {options_str} "
-            f"> {base_name}_{option_key}.log 2>&1"
+            f"> {base_name}_{seed:05d}_{option_key}.log 2>&1"
         )
         print(cmd_str)
 
