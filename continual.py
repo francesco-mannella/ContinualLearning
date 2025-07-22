@@ -478,6 +478,7 @@ def main(params, use_wandb=False, device="gpu"):
             test_loaders[i : i + 1],
             regress_model[i],
             device,
+            )
         final_accuracies.append(regress_accuracy)
         wandb.summary[f"accuracy_task{i:03d}"] = regress_accuracy
 
