@@ -151,53 +151,6 @@ def to_numpy(x):
     return x.cpu().detach().numpy()
 
 
-def get_regress_matrix(model, loaders, regres_w):
-    """Calculates the regression matrix based on model outputs.
-
-    Args:
-        model: The trained model.
-        loaders: List of data loaders to process.
-        regres_w: regression matrix for all labels
-
-    Returns:
-        numpy.ndarray: The regression matrix.
-    """
-    resps = []
-    for loader in loaders:
-        for data, target in loader:
-            data, target = data.to(DEVICE), target.to(DEVICE)
-            norms = model(data)
-            latent = torch.softmax(1000 / norms, 1).round()
-            resps.append(
-                np.hstack(
-                    [
-                        to_numpy(target).reshape(-1, 1),
-                        to_numpy(latent).reshape(-1, model.output_size),
-                    ]
-                )
-            )
-
-    resps = pd.DataFrame(
-        np.vstack(resps),
-        columns=["target", *np.arange(model.side**2)],
-    )
-
-    # Group by target and calculate mean responses
-    curr_regres_w = resps.groupby("target").mean().reset_index().to_numpy()
-
-    s = np.sum(curr_regres_w[:, 1:], axis=1, keepdims=True)
-    mask = s > 0
-    s[s == 0] = 1  # Replace 0 with 1 to avoid division by zero
-    curr_regres_w[:, 1:] = np.where(
-        mask,
-        curr_regres_w[:, 1:] / (s + 1e-10),
-        np.zeros_like(curr_regres_w[:, 1:]),
-    )
-
-    regres_w[curr_regres_w[:, 0].flatten().astype(int)] = curr_regres_w[:, 1:]
-
-    return regres_w
-
 
 class MultinomialLogisticRegression(nn.Module):
     def __init__(self, num_features, num_classes):
@@ -305,35 +258,6 @@ def evaluate_model_by_regression(model, test_loaders, regress_model, device):
     print(f"accuracy is {100*accurate:<5.2f}%")
     return accurate
 
-
-def evaluate_model(model, test_loaders, w_regress, DEVICE):
-    """Evaluates the model accuracy.
-
-    Args:
-        model: The model to evaluate.
-        test_loaders: List of test data loaders.
-        w_regress: Regression weights.
-        DEVICE: Device to use (CPU or GPU).
-
-    Returns:
-        The accuracy of the model.
-    """
-    correct = 0
-    total = 0
-    regress = w_regress
-    with torch.no_grad():
-        for test_loader in test_loaders:
-            for data, target in test_loader:
-                data, target = data.to(DEVICE), target.to(DEVICE)
-                norms = model(data)
-                latent = torch.softmax(1000 / norms, 1)
-                predicted = (to_numpy(latent) @ regress.T).argmax(1)
-                total += target.size(0)
-                correct += (predicted == to_numpy(target)).sum()
-
-    accuracy = correct / total
-
-    return accuracy
 
 
 class Plotter:
@@ -487,9 +411,6 @@ def main(params, use_wandb=False, device="gpu"):
         params.input_dim, params.latent_dim, params.learning_rate
     )
 
-    # Regress matrix
-    w_regress = np.zeros([len(data_labels), model.output_size])
-
     print("Initialize the LOSS manager")
     # Initialize the loss manager.
     lossManager = LossEfficacyFactory(
@@ -541,32 +462,15 @@ def main(params, use_wandb=False, device="gpu"):
             regress_model,
             device,
         )
-        # # REGRESS MATRIX METHOD
-        # Evaluate the model and plot the results.
-        w_regress = get_regress_matrix(
-            model,
-            train_loaders[i : i + 1],
-            w_regress,
-        )
-
-        matrix_accuracy = evaluate_model(
-            model,
-            test_loaders[: i + 1],
-            w_regress,
-            device,
-        )
-
         plotter.plot_weights_and_efficacies()
 
         print(f"Regress accuracy on task {i+1}: {100 * regress_accuracy:.2f}%")
-        print(f"Matrix accuracy on task {i+1}: {100 * matrix_accuracy:.2f}%")
 
         if use_wandb:
             wandb.log(
                 {
                     "task": {i + 1},
-                    "regress_accuracy": regress_accuracy,
-                    "matrix_accuracy": matrix_accuracy,
+                    "accuracy": regress_accuracy,
                     "plot": plotter.fig,
                 }
             )
