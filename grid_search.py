@@ -43,6 +43,9 @@ from itertools import product
 import slugify
 
 
+import os
+
+
 def get_combinations(data):
     """
     Generates all possible combinations of list elements from a dictionary.
@@ -173,6 +176,10 @@ if __name__ == "__main__":
     MAX_PROCESSES = 4
 
     orig_path = os.path.dirname(os.path.realpath(__file__))
+    
+    if not os.path.exists("logs"):
+        os.makedirs("logs")
+
 
     for i, p in enumerate(get_combinations(params)):
         #
@@ -190,7 +197,7 @@ if __name__ == "__main__":
         cmd_str = (
             f"nohup python -u {orig_path}/continual.py "
             f"-n {base_name} -s {seed} {use_wandb} {options_str} "
-            f"> {base_name}_{seed:05d}_{option_key}.log 2>&1"
+            f"> logs/{base_name}_{seed:05d}_{option_key}.log 2>&1"
         )
         print(cmd_str)
 

@@ -159,7 +159,7 @@ class MultinomialLogisticRegression(nn.Module):
         return self.linear(x)
 
 
-class MultinomialLogisticRegressionCallable:
+class RegressionManager:
     def __init__(
         self,
         learning_rate=0.03,
@@ -212,7 +212,7 @@ def get_regression(
     num_iterations=200,
 ):
     num_features = model.output_size
-    regressionManager = MultinomialLogisticRegressionCallable(
+    regressionManager = RegressionManager(
         learning_rate=0.03,
         num_features=num_features,
         num_classes=num_classes,
@@ -331,16 +331,37 @@ def initialize_mnist_loaders(tasks, params):
 
 
 def get_tasks(n_elems, task_width=2):
-    c2 = torch.tensor(list(combinations(range(n_elems), task_width)))
+    """Generates non-overlapping tasks from combinations of elements.
 
-    tasks = []
-    while len(c2) > 0:
-        n = len(c2)
-        task = c2[torch.randperm(n)[0]]
-        tasks.append(task)
-        c2 = c2[[all([x not in task for x in c]) for c in c2]]
+    Args:
+        n_elems (int): Number of elements to generate combinations from.
+        task_width (int, optional): Width of each task. Defaults to 2.
 
-    return torch.stack(tasks).tolist()
+    Returns:
+        list: List of non-overlapping tasks.
+    """
+    # Generate all possible combinations of elements with the given task width
+    all_combinations = torch.tensor(
+        list(combinations(range(n_elems), task_width))
+    )
+
+    selected_tasks = []
+    while len(all_combinations) > 0:
+        # Get the number of remaining combinations
+        num_combinations = len(all_combinations)
+        # Select a random task from the remaining combinations
+        random_task = all_combinations[torch.randperm(num_combinations)[0]]
+        selected_tasks.append(random_task)
+        # Filter out combinations that overlap with the selected random task
+        all_combinations = all_combinations[
+            [
+                all(x not in random_task for x in combo)
+                for combo in all_combinations
+            ]
+        ]
+
+    # Return the list of selected non-overlapping tasks
+    return torch.stack(selected_tasks).tolist()
 
 
 def get_anchors(n_elems, params, device):
@@ -471,14 +492,14 @@ def main(params, use_wandb=False, device="gpu"):
                 }
             )
 
-    final_accuracies = [] 
+    final_accuracies = []
     for i, task in enumerate(tasks):
         regress_accuracy = evaluate_model_by_regression(
             model,
             test_loaders[i : i + 1],
-            regress_model[i],
+            regress_models[i],
             device,
-            )
+        )
         final_accuracies.append(regress_accuracy)
         wandb.summary[f"accuracy_task{i:03d}"] = regress_accuracy
 
